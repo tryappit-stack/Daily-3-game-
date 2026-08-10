@@ -1,0 +1,365 @@
+import React, { useState, useMemo } from "react";
+
+/* ============================================================================
+   DAILY 3 LAB — a personal probability sandbox for California Daily 3 (evening)
+   Every combo 000–999 is 1-in-1000. Nothing here changes that. This tool makes
+   the *pattern-picking* transparent — and shows, honestly, that it doesn't win.
+   ========================================================================== */
+
+// --- Seed data: 50 REAL CA Daily 3 evening draws, Jun 21 – Aug 9 2026 --------
+// Source: LotteryUSA (unofficial mirror). Verify against calottery.com before acting.
+const SEED = `2026-06-21,270
+2026-06-22,327
+2026-06-23,693
+2026-06-24,889
+2026-06-25,095
+2026-06-26,021
+2026-06-27,178
+2026-06-28,532
+2026-06-29,585
+2026-06-30,745
+2026-07-01,067
+2026-07-02,616
+2026-07-03,169
+2026-07-04,537
+2026-07-05,323
+2026-07-06,484
+2026-07-07,923
+2026-07-08,226
+2026-07-09,081
+2026-07-10,194
+2026-07-11,774
+2026-07-12,251
+2026-07-13,296
+2026-07-14,489
+2026-07-15,697
+2026-07-16,375
+2026-07-17,386
+2026-07-18,733
+2026-07-19,440
+2026-07-20,686
+2026-07-21,717
+2026-07-22,152
+2026-07-23,191
+2026-07-24,984
+2026-07-25,744
+2026-07-26,015
+2026-07-27,315
+2026-07-28,254
+2026-07-29,867
+2026-07-30,049
+2026-07-31,705
+2026-08-01,549
+2026-08-02,877
+2026-08-03,851
+2026-08-04,113
+2026-08-05,969
+2026-08-06,172
+2026-08-07,635
+2026-08-08,997
+2026-08-09,169`;
+
+function parseDraws(text) {
+  return text.trim().split("\n").map((line) => {
+    const [date, num] = line.split(",").map((s) => s.trim());
+    const digits = num.split("").map(Number);
+    return { date, str: num.padStart(3, "0"), digits, sum: digits.reduce((a, b) => a + b, 0) };
+  }).filter((d) => d.digits.length === 3 && d.digits.every((n) => !isNaN(n)));
+}
+
+function computeFeatures(draws) {
+  const overall = Array(10).fill(0);
+  draws.forEach((d) => d.digits.forEach((x) => overall[x]++));
+  const since = Array(10).fill(draws.length);
+  for (let dig = 0; dig < 10; dig++) {
+    for (let i = draws.length - 1, g = 0; i >= 0; i--, g++) {
+      if (draws[i].digits.includes(dig)) { since[dig] = g; break; }
+    }
+  }
+  const sums = {};
+  draws.forEach((d) => { sums[d.sum] = (sums[d.sum] || 0) + 1; });
+  const commonSums = new Set(Object.entries(sums).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([s]) => +s));
+  const idx = [...overall.keys()];
+  const hot = [...idx].sort((a, b) => overall[b] - overall[a]).slice(0, 3);
+  const cold = [...idx].sort((a, b) => overall[a] - overall[b]).slice(0, 3);
+  const overdue = [...idx].sort((a, b) => since[b] - since[a]).slice(0, 3);
+  let distinct = 0, pair = 0, triple = 0;
+  draws.forEach((d) => { const u = new Set(d.digits).size; if (u === 3) distinct++; else if (u === 2) pair++; else triple++; });
+  return { overall, since, hot, cold, overdue, commonSums, patterns: { distinct, pair, triple }, n: draws.length };
+}
+
+function scoreCandidate(c, f, w) {
+  const digs = c.split("").map(Number);
+  const maxF = Math.max(...f.overall) * 3 || 1;
+  const maxS = Math.max(...f.since) * 3 || 1;
+  const freq = digs.reduce((a, d) => a + f.overall[d], 0) / maxF;
+  const over = digs.reduce((a, d) => a + f.since[d], 0) / maxS;
+  const sum = digs.reduce((a, b) => a + b, 0);
+  const sumc = f.commonSums.has(sum) ? 1 : 0;
+  const u = new Set(digs).size;
+  const patt = u === 3 ? 1 : u === 2 ? 0.5 : 0;
+  const score = w.freq * freq + w.over * over + w.sum * sumc + w.patt * patt;
+  const reasons = [];
+  if (digs.some((d) => f.hot.includes(d))) reasons.push("hot digit");
+  if (sumc) reasons.push(`sum ${sum} common`);
+  if (digs.some((d) => f.overdue.includes(d))) reasons.push("overdue digit");
+  reasons.push(u === 3 ? "all distinct" : u === 2 ? "one pair" : "triple");
+  return { score, reasons };
+}
+
+function generateCandidates(f, n = 300) {
+  const pool = [...new Set([...f.hot, ...f.overdue, ...Array(10).keys()])];
+  const out = new Set();
+  let guard = 0;
+  while (out.size < n && guard++ < 5000) {
+    let s = "";
+    for (let i = 0; i < 3; i++) s += pool[Math.floor(Math.random() * pool.length)];
+    out.add(s);
+  }
+  return [...out];
+}
+
+function suggest(draws, w, top = 6) {
+  const f = computeFeatures(draws);
+  return generateCandidates(f).map((c) => ({ c, ...scoreCandidate(c, f, w) }))
+    .sort((a, b) => b.score - a.score).slice(0, top);
+}
+
+function backtest(draws, w, tickets = 6, window = 30) {
+  let sys = 0, rand = 0, trials = 0;
+  for (let i = window; i < draws.length; i++) {
+    const f = computeFeatures(draws.slice(0, i));
+    const picks = generateCandidates(f, 300).map((c) => ({ c, ...scoreCandidate(c, f, w) }))
+      .sort((a, b) => b.score - a.score).slice(0, tickets).map((x) => x.c);
+    const rp = Array.from({ length: tickets }, () => String(Math.floor(Math.random() * 1000)).padStart(3, "0"));
+    const actual = draws[i].str;
+    if (picks.includes(actual)) sys++;
+    if (rp.includes(actual)) rand++;
+    trials++;
+  }
+  return { sys, rand, trials };
+}
+
+const PRESETS = {
+  Balanced: { freq: 0.4, over: 0.2, sum: 0.25, patt: 0.15 },
+  "Hot chaser": { freq: 0.8, over: 0.05, sum: 0.1, patt: 0.05 },
+  "Overdue hunter": { freq: 0.1, over: 0.7, sum: 0.1, patt: 0.1 },
+  "Sum hugger": { freq: 0.1, over: 0.1, sum: 0.75, patt: 0.05 },
+};
+
+export default function App() {
+  const [raw, setRaw] = useState(SEED);
+  const [weights, setWeights] = useState(PRESETS.Balanced);
+  const [preset, setPreset] = useState("Balanced");
+  const [nonce, setNonce] = useState(0); // re-roll trigger
+  const [bt, setBt] = useState(null);
+
+  const draws = useMemo(() => parseDraws(raw), [raw]);
+  const feat = useMemo(() => (draws.length ? computeFeatures(draws) : null), [draws]);
+  const picks = useMemo(() => (draws.length ? suggest(draws, weights) : []), [draws, weights, nonce]);
+
+  const setW = (k, v) => { setWeights((w) => ({ ...w, [k]: v })); setPreset("Custom"); };
+  const applyPreset = (name) => { setPreset(name); setWeights(PRESETS[name]); };
+  const runBacktest = () => setBt(backtest(draws, weights));
+
+  const maxFreq = feat ? Math.max(...feat.overall) : 1;
+
+  return (
+    <div className="lab">
+      <style>{CSS}</style>
+
+      <header className="masthead">
+        <div className="eyebrow">CALIFORNIA · DAILY 3 · EVENING</div>
+        <h1>The Odds Lab</h1>
+        <p className="dek">
+          A personal sandbox for picking Daily&nbsp;3 numbers from patterns in past draws —
+          built to show you, honestly, that patterns don&rsquo;t beat chance.
+        </p>
+      </header>
+
+      <div className="verdict">
+        <span className="verdict-mark">1&nbsp;in&nbsp;1,000</span>
+        <span className="verdict-text">
+          Every combination 000–999 has exactly this chance, every draw. Nothing below changes it.
+        </span>
+      </div>
+
+      <main className="grid">
+        {/* LEFT: data + frequency */}
+        <section className="panel">
+          <h2 className="panel-h">The data <span className="count">{draws.length} draws</span></h2>
+          {feat && (
+            <div className="freqs">
+              {feat.overall.map((v, dig) => (
+                <div className="freq-row" key={dig}>
+                  <span className="digit">{dig}</span>
+                  <span className="bar-track">
+                    <span className="bar-fill" style={{ width: `${(v / maxFreq) * 100}%`,
+                      background: feat.hot.includes(dig) ? "var(--hot)" : feat.cold.includes(dig) ? "var(--cold)" : "var(--bar)" }} />
+                  </span>
+                  <span className="freq-n">{v}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          {feat && (
+            <p className="mirage">
+              Fair average is <b>{Math.round(draws.length * 3 / 10)}</b> per digit. The spread you see
+              is normal noise in a small sample — <b>not</b> a biased machine. That&rsquo;s the trap.
+            </p>
+          )}
+          <details className="editor">
+            <summary>Edit / paste draw data</summary>
+            <p className="hint">One per line: <code>YYYY-MM-DD,169</code></p>
+            <textarea value={raw} onChange={(e) => setRaw(e.target.value)} spellCheck={false} />
+          </details>
+        </section>
+
+        {/* MIDDLE: weights */}
+        <section className="panel">
+          <h2 className="panel-h">The strategy</h2>
+          <div className="presets">
+            {Object.keys(PRESETS).map((name) => (
+              <button key={name} className={preset === name ? "chip on" : "chip"} onClick={() => applyPreset(name)}>{name}</button>
+            ))}
+            {preset === "Custom" && <span className="chip on">Custom</span>}
+          </div>
+          {["freq", "over", "sum", "patt"].map((k) => (
+            <div className="slider-row" key={k}>
+              <label>{{ freq: "Digit frequency", over: "Overdue", sum: "Common sum", patt: "Pattern" }[k]}</label>
+              <input type="range" min="0" max="1" step="0.05" value={weights[k]} onChange={(e) => setW(k, +e.target.value)} />
+              <span className="wval">{weights[k].toFixed(2)}</span>
+            </div>
+          ))}
+          <button className="reroll" onClick={() => setNonce((n) => n + 1)}>Re-roll suggestions</button>
+        </section>
+
+        {/* RIGHT: suggestions */}
+        <section className="panel">
+          <h2 className="panel-h">Best guesses</h2>
+          <ol className="picks">
+            {picks.map(({ c, score, reasons }) => (
+              <li key={c} className="pick">
+                <span className="pick-num">{c}</span>
+                <span className="pick-meta">
+                  <span className="pick-score">{score.toFixed(3)}</span>
+                  <span className="pick-why">{reasons.join(" · ")}</span>
+                </span>
+              </li>
+            ))}
+          </ol>
+          <p className="fineprint">Score = how well a number matches your chosen patterns. Not a probability.</p>
+        </section>
+      </main>
+
+      {/* BACKTEST — the honesty engine */}
+      <section className="backtest">
+        <div className="bt-head">
+          <h2>The reality check</h2>
+          <button className="run" onClick={runBacktest}>Run backtest vs. random</button>
+        </div>
+        {bt ? (
+          <div className="bt-result">
+            <div className="bt-col">
+              <div className="bt-big">{bt.sys}</div>
+              <div className="bt-lab">straight hits — your strategy</div>
+            </div>
+            <div className="bt-vs">vs</div>
+            <div className="bt-col">
+              <div className="bt-big">{bt.rand}</div>
+              <div className="bt-lab">straight hits — random picks</div>
+            </div>
+            <div className="bt-col wide">
+              <div className="bt-verdict">
+                {bt.sys > bt.rand ? "Ahead this run — almost certainly luck at this sample size."
+                  : bt.sys < bt.rand ? "Behind random this run. As expected."
+                  : "Tied with random. As expected."}
+                <span className="bt-sub">{bt.trials} draws tested · {bt.trials < 100 ? "far too few to mean anything" : "still interpret with care"}</span>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <p className="bt-empty">Freezes your strategy on early draws, replays it forward, and counts real hits against pure chance. Press run.</p>
+        )}
+      </section>
+
+      <footer className="disclaimer">
+        <p><b>For personal insight and entertainment only.</b> In a fair Daily 3 game, all 1,000 combinations from 000 to 999 have the same chance of being drawn on any given day. Past results do not change that.</p>
+        <p>This tool highlights historical patterns to suggest numbers. The suggestions do <b>not</b> improve your odds, predict outcomes, or guarantee wins. It is not for sale, not gambling advice, and not financial advice. Play within your means. Seed data is from an unofficial mirror — verify at calottery.com.</p>
+        <p className="hotline">Problem gambling? Call 1-800-GAMBLER.</p>
+      </footer>
+    </div>
+  );
+}
+
+const CSS = `
+  @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,900&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600&display=swap');
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  .lab { --ink:#0b0f14; --panel:#121821; --line:#243040; --fg:#e6edf3; --mut:#7d8b9c;
+    --bar:#3a4a5e; --hot:#37d9c4; --cold:#e8a13a; --signal:#37d9c4; --amber:#e8a13a;
+    background:var(--ink); color:var(--fg); font-family:'Inter',sans-serif; min-height:100vh;
+    padding:clamp(20px,4vw,56px); max-width:1240px; margin:0 auto; }
+  .masthead { border-bottom:1px solid var(--line); padding-bottom:28px; margin-bottom:24px; }
+  .eyebrow { font-family:'IBM Plex Mono',monospace; font-size:12px; letter-spacing:.28em; color:var(--signal); margin-bottom:14px; }
+  h1 { font-family:'Fraunces',serif; font-weight:900; font-size:clamp(40px,7vw,76px); line-height:.95; letter-spacing:-.02em; }
+  .dek { color:var(--mut); max-width:52ch; margin-top:14px; font-size:16px; line-height:1.5; }
+  .verdict { display:flex; align-items:center; gap:20px; flex-wrap:wrap; background:var(--panel);
+    border:1px solid var(--line); border-left:3px solid var(--signal); border-radius:10px; padding:18px 22px; margin-bottom:28px; }
+  .verdict-mark { font-family:'IBM Plex Mono',monospace; font-weight:600; font-size:26px; color:var(--signal); white-space:nowrap; }
+  .verdict-text { color:var(--mut); font-size:14px; line-height:1.5; }
+  .grid { display:grid; grid-template-columns:1.15fr 1fr 1fr; gap:18px; margin-bottom:18px; }
+  @media(max-width:900px){ .grid{ grid-template-columns:1fr; } }
+  .panel { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:22px; }
+  .panel-h { font-family:'Fraunces',serif; font-weight:600; font-size:20px; margin-bottom:18px; display:flex; justify-content:space-between; align-items:baseline; }
+  .count { font-family:'IBM Plex Mono',monospace; font-size:12px; color:var(--mut); font-weight:400; }
+  .freqs { display:flex; flex-direction:column; gap:7px; }
+  .freq-row { display:grid; grid-template-columns:18px 1fr 24px; align-items:center; gap:10px; }
+  .digit { font-family:'IBM Plex Mono',monospace; font-size:13px; color:var(--mut); }
+  .bar-track { height:14px; background:#0c1219; border-radius:3px; overflow:hidden; }
+  .bar-fill { display:block; height:100%; border-radius:3px; transition:width .4s ease; }
+  .freq-n { font-family:'IBM Plex Mono',monospace; font-size:12px; text-align:right; color:var(--fg); }
+  .mirage { margin-top:16px; font-size:12.5px; line-height:1.55; color:var(--mut); border-top:1px dashed var(--line); padding-top:14px; }
+  .mirage b { color:var(--amber); }
+  .editor { margin-top:16px; }
+  .editor summary { cursor:pointer; font-size:13px; color:var(--signal); font-family:'IBM Plex Mono',monospace; }
+  .hint { font-size:12px; color:var(--mut); margin:10px 0 6px; } .hint code, code { font-family:'IBM Plex Mono',monospace; color:var(--fg); }
+  textarea { width:100%; height:120px; background:#0c1219; border:1px solid var(--line); border-radius:8px; color:var(--fg);
+    font-family:'IBM Plex Mono',monospace; font-size:12px; padding:10px; resize:vertical; }
+  .presets { display:flex; flex-wrap:wrap; gap:7px; margin-bottom:20px; }
+  .chip { background:transparent; border:1px solid var(--line); color:var(--mut); border-radius:20px; padding:6px 13px;
+    font-size:12.5px; cursor:pointer; font-family:inherit; transition:.15s; }
+  .chip:hover { border-color:var(--signal); color:var(--fg); }
+  .chip.on { background:var(--signal); border-color:var(--signal); color:#04110f; font-weight:600; }
+  .slider-row { display:grid; grid-template-columns:1fr; gap:5px; margin-bottom:16px; }
+  .slider-row label { font-size:13px; color:var(--fg); display:flex; justify-content:space-between; }
+  .slider-row input[type=range]{ -webkit-appearance:none; appearance:none; width:100%; height:4px; background:var(--line); border-radius:2px; }
+  .slider-row input[type=range]::-webkit-slider-thumb{ -webkit-appearance:none; width:16px; height:16px; border-radius:50%; background:var(--signal); cursor:pointer; }
+  .slider-row input[type=range]::-moz-range-thumb{ width:16px; height:16px; border:none; border-radius:50%; background:var(--signal); cursor:pointer; }
+  .wval { font-family:'IBM Plex Mono',monospace; font-size:12px; color:var(--signal); }
+  .reroll { width:100%; margin-top:6px; background:transparent; border:1px solid var(--signal); color:var(--signal);
+    padding:10px; border-radius:8px; font-family:'IBM Plex Mono',monospace; font-size:13px; cursor:pointer; transition:.15s; }
+  .reroll:hover { background:var(--signal); color:#04110f; }
+  .picks { list-style:none; display:flex; flex-direction:column; gap:9px; }
+  .pick { display:flex; align-items:center; gap:14px; background:#0c1219; border:1px solid var(--line); border-radius:8px; padding:11px 14px; }
+  .pick-num { font-family:'IBM Plex Mono',monospace; font-weight:600; font-size:24px; letter-spacing:.05em; color:var(--fg); }
+  .pick-meta { display:flex; flex-direction:column; gap:2px; min-width:0; }
+  .pick-score { font-family:'IBM Plex Mono',monospace; font-size:13px; color:var(--signal); }
+  .pick-why { font-size:11.5px; color:var(--mut); }
+  .fineprint { margin-top:14px; font-size:11.5px; color:var(--mut); font-style:italic; }
+  .backtest { background:linear-gradient(180deg,#141b26,#0e141d); border:1px solid var(--line); border-radius:12px; padding:26px; margin-bottom:24px; }
+  .bt-head { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:14px; margin-bottom:8px; }
+  .bt-head h2 { font-family:'Fraunces',serif; font-weight:600; font-size:22px; }
+  .run { background:var(--amber); border:none; color:#1a1102; padding:11px 20px; border-radius:8px; font-weight:600; font-size:14px; cursor:pointer; font-family:inherit; }
+  .run:hover { filter:brightness(1.08); }
+  .bt-empty { color:var(--mut); font-size:14px; margin-top:12px; line-height:1.5; }
+  .bt-result { display:flex; align-items:center; gap:24px; flex-wrap:wrap; margin-top:18px; }
+  .bt-col { text-align:center; } .bt-col.wide { text-align:left; flex:1; min-width:220px; }
+  .bt-big { font-family:'IBM Plex Mono',monospace; font-size:52px; font-weight:600; line-height:1; }
+  .bt-lab { font-size:12px; color:var(--mut); margin-top:6px; max-width:130px; }
+  .bt-vs { font-family:'Fraunces',serif; font-style:italic; color:var(--mut); font-size:20px; }
+  .bt-verdict { font-size:15px; line-height:1.5; color:var(--fg); }
+  .bt-sub { display:block; font-family:'IBM Plex Mono',monospace; font-size:11.5px; color:var(--amber); margin-top:8px; }
+  .disclaimer { border-top:1px solid var(--line); padding-top:22px; color:var(--mut); font-size:12.5px; line-height:1.6; max-width:75ch; }
+  .disclaimer p { margin-bottom:10px; } .disclaimer b { color:var(--fg); }
+  .hotline { font-family:'IBM Plex Mono',monospace; color:var(--amber); }
+`;
