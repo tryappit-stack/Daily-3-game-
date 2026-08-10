@@ -801,6 +801,20 @@ function pickOne(draws) {
   return { ...best, story };
 }
 
+
+function boxInfo(num) {
+  const digs = num.split("").map(Number);
+  const u = new Set(digs).size;
+  // permutations (unique)
+  const perms = new Set();
+  const [a, b, c] = digs;
+  [[a,b,c],[a,c,b],[b,a,c],[b,c,a],[c,a,b],[c,b,a]].forEach((p) => perms.add(p.join("")));
+  const ways = perms.size; // 6, 3, or 1
+  const kind = ways === 6 ? "6-way box" : ways === 3 ? "3-way box" : "triple (straight only)";
+  const boxOdds = ways === 6 ? "1 in 167" : ways === 3 ? "1 in 333" : "1 in 1,000";
+  return { ways, kind, boxOdds, combos: [...perms].sort() };
+}
+
 const SCOPES = { evening: "Evening", midday: "Midday", combined: "Both draws" };
 
 function App() {
@@ -912,6 +926,27 @@ function App() {
           </div>
         )}
 
+        {pick && !pick.spinning && (() => {
+          const b = boxInfo(pick.num);
+          return (
+            <div className="boxplay">
+              <div className="box-h">How you could play it</div>
+              <div className="box-tag">{b.kind} &middot; box odds {b.boxOdds}</div>
+              <div className="box-rows">
+                <div className="box-row"><span>Straight (exact order)</span><span className="bo">1 in 1,000</span><span className="bp">big payout</span></div>
+                <div className="box-row"><span>Box (any order)</span><span className="bo">{b.boxOdds}</span><span className="bp">smaller payout</span></div>
+              </div>
+              {b.ways > 1 && (
+                <div className="combos">
+                  <span className="combos-lab">Box wins if it&rsquo;s drawn as:</span>
+                  <span className="combos-list">{b.combos.map((c) => <span key={c} className="combo">{c}</span>)}</span>
+                </div>
+              )}
+              <p className="box-note">Box play wins more often but pays less — the two cancel out, so it doesn&rsquo;t beat the odds. It just changes whether you win small often or big rarely. Verify payouts at calottery.com.</p>
+            </div>
+          );
+        })()}
+
         <p className="fairnote">
           Fun fact worth remembering: this number has the exact same chance as any random pick — <b>1 in 1,000</b>.
           The story just makes it more fun than a faceless Quick Pick. 🎲
@@ -1003,6 +1038,17 @@ const CSS = `
   .foot { color:var(--mut); font-size:12px; line-height:1.6; text-align:center; padding:14px 0 4px; max-width:60ch; margin:0 auto; }
   .foot p { margin-bottom:8px; }
   .hotline { font-family:'IBM Plex Mono',monospace; color:var(--cold); }
+  .boxplay { text-align:left; background:#0d141c; border:1px solid var(--line); border-radius:12px; padding:16px 18px; margin-top:14px; }
+  .box-h { font-size:13px; color:var(--signal); font-weight:600; margin-bottom:6px; }
+  .box-tag { font-family:'IBM Plex Mono',monospace; font-size:13px; color:var(--due); margin-bottom:12px; }
+  .box-rows { display:flex; flex-direction:column; gap:6px; margin-bottom:12px; }
+  .box-row { display:grid; grid-template-columns:1.4fr 1fr 1fr; gap:8px; font-size:13px; align-items:center; }
+  .box-row .bo { font-family:'IBM Plex Mono',monospace; color:var(--fg); } .box-row .bp { color:var(--mut); font-size:12px; }
+  .combos { display:flex; flex-direction:column; gap:6px; margin-bottom:12px; }
+  .combos-lab { font-size:12px; color:var(--mut); }
+  .combos-list { display:flex; flex-wrap:wrap; gap:6px; }
+  .combo { font-family:'IBM Plex Mono',monospace; font-size:13px; background:#141b25; border:1px solid var(--line); border-radius:6px; padding:3px 8px; letter-spacing:.06em; }
+  .box-note { font-size:12px; color:var(--mut); line-height:1.5; }
 `;
 
 ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
