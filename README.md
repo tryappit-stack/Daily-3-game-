@@ -41,3 +41,14 @@ npm run dev
   a Work-portal project, not part of this static site.
 
 Problem gambling? Call 1-800-GAMBLER.
+
+
+## Add to your iPhone home screen (looks like a real app)
+1. Open the site in **Safari** (must be Safari, not Chrome).
+2. Tap the **Share** button (square with an up-arrow).
+3. Tap **Add to Home Screen** → **Add**.
+It installs with the "Odds Lab" name and icon and opens full-screen.
+
+## Icon / PWA files (must be at the repo root)
+`icon-180.png`, `icon-192.png`, `icon-512.png`, `manifest.webmanifest`, and the
+`public/` folder (Vite copies `public/` to the site root on build). Keep both copies.

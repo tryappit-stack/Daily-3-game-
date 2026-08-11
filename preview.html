@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"/>
-<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
 <title>The Odds Lab — CA Daily 3</title>
 <style>body{margin:0;background:#0b0f14}</style>
 <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -815,6 +815,14 @@ function boxInfo(num) {
   return { ways, kind, boxOdds, combos: [...perms].sort() };
 }
 
+function checkAgainst(myNum, draws) {
+  if (myNum.length !== 3 || !draws.length) return null;
+  const latest = draws[draws.length - 1];
+  const straight = myNum === latest.str;
+  const box = myNum.split("").sort().join("") === latest.str.split("").sort().join("");
+  return { latest, straight, box };
+}
+
 const SCOPES = { evening: "Evening", midday: "Midday", combined: "Both draws" };
 
 function App() {
@@ -826,10 +834,15 @@ function App() {
   const [newTime, setNewTime] = useState("evening");
   const [newNum, setNewNum] = useState("");
   const [showData, setShowData] = useState(false);
+  const [myNum, setMyNum] = useState("");
+  const [checkResult, setCheckResult] = useState(null);
 
   const all = useMemo(() => parseSeed(seedText), [seedText]);
   const draws = useMemo(() => scope === "combined" ? all : all.filter((d) => d.time === scope), [all, scope]);
   const f = useMemo(() => features(draws), [draws]);
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const latestDraw = draws.length ? draws[draws.length - 1] : null;
+  const isStale = latestDraw ? latestDraw.date < todayStr : true;
   const counts = { evening: all.filter(d=>d.time==="evening").length, midday: all.filter(d=>d.time==="midday").length };
   const maxFreq = Math.max(...f.overall);
   const recent = useMemo(() => [...draws].slice(-5).reverse(), [draws]);
@@ -843,12 +856,14 @@ function App() {
     }, 70);
   };
 
-  const addDraw = () => {
+  const addDraw = (useToday) => {
     const n = newNum.replace(/\D/g, "");
-    if (n.length !== 3 || !newDate) return;
-    setSeedText((s) => `${newDate},${newTime === "midday" ? "m" : "e"},${n}\n` + s);
-    setNewNum("");
+    const date = useToday ? todayStr : newDate;
+    if (n.length !== 3 || !date) return;
+    setSeedText((s) => `${date},${newTime === "midday" ? "m" : "e"},${n}\n` + s);
+    setNewNum(""); setCheckResult(null);
   };
+  const fillToday = () => setNewDate(todayStr);
 
   return (
     <div className="lab">
@@ -956,17 +971,70 @@ function App() {
         </p>
       </section>
 
+      {/* Play your own / check a number */}
+      <section className="card">
+        <div className="step">Play your own number</div>
+        <p className="own-sub">Type any 3 digits to see what kind of box it is, your best odds, and whether it would have won the latest {scope === "combined" ? "" : scope} draw.</p>
+        <div className="own-row">
+          <input className="ownin" placeholder="4 8 0" maxLength={3} value={myNum}
+            onChange={(e) => { setMyNum(e.target.value.replace(/\D/g, "")); setCheckResult(null); }} />
+          <button className="own-btn" disabled={myNum.length !== 3}
+            onClick={() => setCheckResult(checkAgainst(myNum, draws))}>Check it</button>
+        </div>
+
+        {isStale && latestDraw && (
+          <div className="stale-warn">
+            ⚠ Your newest {scope === "combined" ? "" : scope} draw on file is <b>{latestDraw.str}</b> from <b>{latestDraw.date}</b>, not today. The check below uses that draw. Add today&rsquo;s result in the next step for an accurate check.
+          </div>
+        )}
+
+        {myNum.length === 3 && (() => {
+          const b = boxInfo(myNum);
+          return (
+            <div className="own-out">
+              <div className="own-kind">{myNum} is a <b>{b.kind}</b></div>
+              <div className="own-odds">
+                <div className="oo"><span className="oo-t">Straight</span><span className="oo-o">1 in 1,000</span><span className="oo-n">exact order &middot; biggest prize</span></div>
+                <div className="oo best"><span className="oo-t">Box (best chance)</span><span className="oo-o">{b.boxOdds}</span><span className="oo-n">{b.ways === 6 ? "any of 6 orders" : b.ways === 3 ? "any of 3 orders" : "triple — straight only"}</span></div>
+              </div>
+              {b.ways > 1 && (
+                <div className="own-combos">Box wins if drawn as: {b.combos.map((c) => <span key={c} className="combo">{c}</span>)}</div>
+              )}
+            </div>
+          );
+        })()}
+
+        {checkResult && (
+          <div className={"check-banner " + (checkResult.straight ? "win-big" : checkResult.box ? "win-box" : "no-win")}>
+            {checkResult.straight
+              ? `🎉 STRAIGHT WIN! ${myNum} exactly matches the latest draw (${checkResult.latest.str}, ${checkResult.latest.date}).`
+              : checkResult.box
+              ? `✓ BOX WIN — same digits, different order. Latest draw was ${checkResult.latest.str} (${checkResult.latest.date}). A box play would have won; a straight would not.`
+              : `No win against the latest draw (${checkResult.latest.str}, ${checkResult.latest.date}). That's the usual outcome — it's a 1-in-1,000 game.`}
+          </div>
+        )}
+
+        <p className="own-honest">Your <b>best chance of winning something</b> is a 6-way box at 1 in 167 — but heads-up: easier wins pay proportionally less, so &ldquo;win more often&rdquo; doesn&rsquo;t mean &ldquo;come out ahead.&rdquo; The house edge is the same either way. See official odds &amp; prizes at <a href="https://www.calottery.com/draw-games/daily-3" target="_blank" rel="noopener">calottery.com</a>.</p>
+      </section>
+
       {/* STEP 3 — keep it fresh */}
       <section className="card">
-        <div className="step">3 &middot; Add last night&rsquo;s winner (optional)</div>
-        <div className="adder-row">
-          <input type="date" value={newDate} onChange={(e) => setNewDate(e.target.value)} />
+        <div className="step">3 &middot; Add the latest draw {isStale ? "" : "✓ up to date"}</div>
+        <p className="own-sub">Enter tonight&rsquo;s winning number so the checker above stays accurate. One tap uses today&rsquo;s date for you.</p>
+        <div className="fresh-row">
           <select value={newTime} onChange={(e) => setNewTime(e.target.value)}>
             <option value="evening">Evening</option><option value="midday">Midday</option>
           </select>
           <input className="numin" placeholder="169" maxLength={3} value={newNum} onChange={(e) => setNewNum(e.target.value.replace(/\D/g, ""))} />
-          <button className="add" onClick={addDraw} disabled={newNum.length !== 3 || !newDate}>Add</button>
+          <button className="add big-add" onClick={() => addDraw(true)} disabled={newNum.length !== 3}>Add today&rsquo;s draw</button>
         </div>
+        <details className="other-date">
+          <summary>Add for a different date instead</summary>
+          <div className="adder-row">
+            <input type="date" value={newDate} onChange={(e) => setNewDate(e.target.value)} />
+            <button className="add" onClick={() => addDraw(false)} disabled={newNum.length !== 3 || !newDate}>Add for this date</button>
+          </div>
+        </details>
         <button className="datalink" onClick={() => setShowData((v) => !v)}>{showData ? "Hide" : "View"} all {all.length} draws</button>
         {showData && (
           <>
@@ -1052,6 +1120,36 @@ const CSS = `
   .combos-list { display:flex; flex-wrap:wrap; gap:6px; }
   .combo { font-family:'IBM Plex Mono',monospace; font-size:13px; background:#141b25; border:1px solid var(--line); border-radius:6px; padding:3px 8px; letter-spacing:.06em; }
   .box-note { font-size:12px; color:var(--mut); line-height:1.5; }
+
+
+  .stale-warn { background:rgba(232,161,58,.13); border:1px solid var(--cold); color:#f0c07a; border-radius:12px; padding:14px 16px; margin-bottom:14px; font-size:15px; line-height:1.55; }
+  .stale-warn b { color:#fff; }
+  .fresh-row { display:flex; gap:10px; flex-wrap:wrap; align-items:stretch; margin-bottom:12px; }
+  .fresh-row select { background:#0d141c; border:1px solid var(--line); color:var(--fg); border-radius:10px; padding:14px; font-family:'IBM Plex Mono',monospace; font-size:16px; min-height:56px; }
+  .big-add { flex:1; min-width:180px; font-size:18px; min-height:56px; }
+  .other-date { margin-bottom:12px; }
+  .other-date summary { cursor:pointer; font-size:14px; color:var(--mut); font-family:'IBM Plex Mono',monospace; padding:6px 0; }
+  .other-date .adder-row { margin-top:10px; }
+
+  .own-sub { font-size:15px; color:var(--mut); line-height:1.55; margin-bottom:16px; }
+  .own-row { display:flex; gap:10px; margin-bottom:16px; flex-wrap:wrap; }
+  .ownin { flex:1; min-width:120px; background:#0d141c; border:1px solid var(--line); color:var(--fg); border-radius:10px; padding:16px; font-family:'IBM Plex Mono',monospace; font-size:28px; text-align:center; letter-spacing:.3em; }
+  .own-btn { background:var(--signal); border:none; color:#04110f; font-weight:700; font-size:17px; padding:16px 28px; border-radius:10px; cursor:pointer; font-family:inherit; min-height:60px; }
+  .own-btn:disabled { opacity:.4; cursor:not-allowed; }
+  .own-out { background:#0d141c; border:1px solid var(--line); border-radius:12px; padding:16px 18px; margin-bottom:14px; }
+  .own-kind { font-size:17px; margin-bottom:12px; } .own-kind b { color:var(--due); }
+  .own-odds { display:flex; flex-direction:column; gap:8px; margin-bottom:12px; }
+  .oo { display:grid; grid-template-columns:1.3fr auto; gap:2px 10px; padding:10px 12px; background:#141b25; border:1px solid var(--line); border-radius:8px; }
+  .oo.best { border-color:var(--hot); }
+  .oo-t { font-weight:600; font-size:15px; } .oo-o { font-family:'IBM Plex Mono',monospace; font-size:16px; color:var(--hot); text-align:right; }
+  .oo-n { grid-column:1 / -1; font-size:12.5px; color:var(--mut); }
+  .own-combos { font-size:14px; color:var(--mut); display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
+  .check-banner { border-radius:12px; padding:16px 18px; margin-bottom:14px; font-size:16px; line-height:1.5; font-weight:500; }
+  .check-banner.win-big { background:rgba(55,217,196,.15); border:1px solid var(--hot); color:var(--hot); }
+  .check-banner.win-box { background:rgba(139,147,255,.15); border:1px solid var(--due); color:#c3c8ff; }
+  .check-banner.no-win { background:#0d141c; border:1px solid var(--line); color:var(--mut); }
+  .own-honest { font-size:14px; color:var(--mut); line-height:1.6; } .own-honest b { color:var(--fg); } .own-honest a { color:var(--signal); }
+
   /* ---- BOOMER-FRIENDLY / MOBILE PASS: larger type, big touch targets ---- */
   .lab { font-size:17px; }
   .tag { font-size:17px; }
@@ -1095,6 +1193,8 @@ const CSS = `
     .box-row { grid-template-columns:1fr auto; }
     .box-row .bp { grid-column:1 / -1; }
     .adder-row { flex-direction:column; align-items:stretch; }
+    .fresh-row { flex-direction:column; }
+    .fresh-row select, .big-add, .fresh-row .numin { width:100%; }
     .adder-row input, .adder-row select, .numin, .add { width:100%; }
   }
 `;

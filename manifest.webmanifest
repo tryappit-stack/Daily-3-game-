@@ -1,0 +1,14 @@
+{
+  "name": "The Odds Lab — CA Daily 3",
+  "short_name": "Odds Lab",
+  "description": "A personal, honest sandbox for California Daily 3 numbers.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0b0f14",
+  "theme_color": "#0b0f14",
+  "icons": [
+    { "src": "/icon-192.png", "type": "image/png", "sizes": "192x192" },
+    { "src": "/icon-512.png", "type": "image/png", "sizes": "512x512" },
+    { "src": "/icon-512.png", "type": "image/png", "sizes": "512x512", "purpose": "any maskable" }
+  ]
+}
