@@ -872,21 +872,23 @@ function App() {
 
         <div className="moodgrid">
           <div className="mood hot">
-            <span className="mood-lab">Running hot</span>
+            <span className="mood-lab">Shows up most</span>
             <span className="mood-nums">{f.hot.join("  ")}</span>
-            <span className="mood-sub">showing up most</span>
+            <span className="mood-sub">over all history</span>
           </div>
           <div className="mood cold">
-            <span className="mood-lab">Running cold</span>
+            <span className="mood-lab">Shows up least</span>
             <span className="mood-nums">{f.cold.join("  ")}</span>
-            <span className="mood-sub">showing up least</span>
+            <span className="mood-sub">over all history</span>
           </div>
           <div className="mood due">
-            <span className="mood-lab">Overdue</span>
+            <span className="mood-lab">Longest unseen</span>
             <span className="mood-nums">{f.overdue.join("  ")}</span>
-            <span className="mood-sub">longest unseen</span>
+            <span className="mood-sub">gap since last draw</span>
           </div>
         </div>
+
+        <p className="mythbust">Fun to watch — but remember: a digit being &ldquo;least seen&rdquo; or &ldquo;longest unseen&rdquo; does <b>not</b> make it due. Every draw starts fresh.</p>
 
         <details className="chartwrap">
           <summary>See the full chart</summary>
@@ -935,6 +937,7 @@ function App() {
               <div className="box-rows">
                 <div className="box-row"><span>Straight (exact order)</span><span className="bo">1 in 1,000</span><span className="bp">big payout</span></div>
                 <div className="box-row"><span>Box (any order)</span><span className="bo">{b.boxOdds}</span><span className="bp">smaller payout</span></div>
+                <div className="box-row"><span>Straight/Box (both)</span><span className="bo">{b.boxOdds}</span><span className="bp">big if exact, small if scrambled</span></div>
               </div>
               {b.ways > 1 && (
                 <div className="combos">
@@ -942,7 +945,7 @@ function App() {
                   <span className="combos-list">{b.combos.map((c) => <span key={c} className="combo">{c}</span>)}</span>
                 </div>
               )}
-              <p className="box-note">Box play wins more often but pays less — the two cancel out, so it doesn&rsquo;t beat the odds. It just changes whether you win small often or big rarely. Verify payouts at calottery.com.</p>
+              <p className="box-note">Plain version: <b>Straight</b> = exact order, hardest, biggest prize. <b>Box</b> = any order, easier, smaller prize. <b>Straight/Box</b> = your $1 split in two, so you win big if it&rsquo;s exact or small if it&rsquo;s scrambled (each half pays about half). None of them beat the odds — easier wins just pay less. Verify current payouts at calottery.com.</p>
             </div>
           );
         })()}
@@ -1049,6 +1052,51 @@ const CSS = `
   .combos-list { display:flex; flex-wrap:wrap; gap:6px; }
   .combo { font-family:'IBM Plex Mono',monospace; font-size:13px; background:#141b25; border:1px solid var(--line); border-radius:6px; padding:3px 8px; letter-spacing:.06em; }
   .box-note { font-size:12px; color:var(--mut); line-height:1.5; }
+  /* ---- BOOMER-FRIENDLY / MOBILE PASS: larger type, big touch targets ---- */
+  .lab { font-size:17px; }
+  .tag { font-size:17px; }
+  .step { font-size:13px; }
+  .sc { font-size:16px; padding:14px 10px; min-height:52px; }
+  .mood-lab { font-size:13px; }
+  .mood-nums { font-size:30px; }
+  .mood-sub { font-size:12px; }
+  .mythbust { font-size:14px; color:var(--mut); line-height:1.55; margin:4px 0 16px; }
+  .mythbust b { color:var(--cold); }
+  .chartwrap summary { font-size:15px; padding:6px 0; }
+  .freq-n { font-size:14px; }
+  .chart-note { font-size:14px; }
+  .recent-lab { font-size:14px; }
+  .chip-num { font-size:16px; padding:6px 11px; }
+  .rollbtn { font-size:21px; padding:20px 40px; min-height:64px; width:100%; max-width:360px; }
+  .why-h, .box-h { font-size:15px; }
+  .why li { font-size:16px; }
+  .box-tag { font-size:15px; }
+  .box-row { font-size:15px; grid-template-columns:1.5fr 1fr; grid-auto-rows:auto; }
+  .box-row .bp { grid-column:1 / -1; margin-top:-2px; }
+  .combo { font-size:15px; padding:5px 10px; }
+  .box-note { font-size:14px; line-height:1.6; }
+  .fairnote { font-size:15px; }
+  .adder-row input, .adder-row select { font-size:16px; padding:14px 14px; min-height:52px; }
+  .numin { width:96px; font-size:20px; }
+  .add { font-size:16px; padding:14px 24px; min-height:52px; }
+  .datalink { font-size:15px; padding:8px 0; }
+  .foot { font-size:13px; }
+
+  @media (max-width:560px) {
+    .lab { padding:14px; }
+    h1 { font-size:44px; }
+    .scope { flex-direction:column; }
+    .sc { width:100%; min-width:0; }
+    .moodgrid { grid-template-columns:1fr; }
+    .mood { flex-direction:row; justify-content:space-between; align-items:center; text-align:left; padding:16px; }
+    .mood-nums { font-size:28px; }
+    .mood > span:first-child { order:0; } 
+    .bignum { font-size:clamp(72px,26vw,120px); }
+    .box-row { grid-template-columns:1fr auto; }
+    .box-row .bp { grid-column:1 / -1; }
+    .adder-row { flex-direction:column; align-items:stretch; }
+    .adder-row input, .adder-row select, .numin, .add { width:100%; }
+  }
 `;
 
 ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
