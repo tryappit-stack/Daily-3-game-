@@ -812,6 +812,14 @@ function checkAgainst(myNum, draws) {
   return { latest, straight, box };
 }
 
+function fmtDate(iso) {
+  // iso "2026-08-11" -> "August 11, 2026"
+  const [y, m, d] = iso.split("-").map(Number);
+  const months = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+  if (!y || !m || !d) return iso;
+  return `${months[m - 1]} ${d}, ${y}`;
+}
+
 const SCOPES = { evening: "Evening", midday: "Midday", combined: "Both draws" };
 
 export default function App() {
@@ -825,6 +833,10 @@ export default function App() {
   const [showData, setShowData] = useState(false);
   const [myNum, setMyNum] = useState("");
   const [checkResult, setCheckResult] = useState(null);
+  const [bets, setBets] = useState([]);
+  const [betNum, setBetNum] = useState("");
+  const [betAmt, setBetAmt] = useState("1");
+  const [betWon, setBetWon] = useState("");
 
   const all = useMemo(() => parseSeed(seedText), [seedText]);
   const draws = useMemo(() => scope === "combined" ? all : all.filter((d) => d.time === scope), [all, scope]);
@@ -853,6 +865,27 @@ export default function App() {
     setNewNum(""); setCheckResult(null);
   };
   const fillToday = () => setNewDate(todayStr);
+  // delete a specific draw line (by its exact "date,t,num" string)
+  const deleteDrawLine = (lineStr) => {
+    setSeedText((s) => s.split("\n").filter((ln) => ln.trim() !== lineStr).join("\n"));
+    setCheckResult(null);
+  };
+  // recent raw lines (newest first) for the editable list
+  const rawLines = seedText.trim().split("\n")
+    .filter((l) => l.trim())
+    .sort((a, b) => (b.split(",")[0] > a.split(",")[0] ? 1 : b.split(",")[0] < a.split(",")[0] ? -1 : 0))
+    .slice(0, 8);
+  const logBet = () => {
+    const n = betNum.replace(/\D/g, "");
+    const amt = parseFloat(betAmt) || 0;
+    const won = parseFloat(betWon) || 0;
+    if (n.length !== 3 || amt <= 0) return;
+    setBets((b) => [{ date: todayStr, num: n, amt, won, id: Date.now() }, ...b]);
+    setBetNum(""); setBetWon("");
+  };
+  const delBet = (id) => setBets((b) => b.filter((x) => x.id !== id));
+  const totals = bets.reduce((a, x) => ({ spent: a.spent + x.amt, won: a.won + x.won }), { spent: 0, won: 0 });
+  const net = totals.won - totals.spent;
 
   return (
     <div className="lab">
@@ -865,7 +898,7 @@ export default function App() {
 
       {/* STEP 1 — the vibe / stats */}
       <section className="card">
-        <div className="step">1 &middot; The mood of the numbers</div>
+        <div className="step big-step"><span className="rn">I</span> The mood of the numbers</div>
         <div className="scope">
           {Object.keys(SCOPES).map((s) => (
             <button key={s} className={scope === s ? "sc on" : "sc"} onClick={() => { setScope(s); setPick(null); }}>
@@ -877,17 +910,17 @@ export default function App() {
         <div className="moodgrid">
           <div className="mood hot">
             <span className="mood-lab">Shows up most</span>
-            <span className="mood-nums">{f.hot.join("  ")}</span>
+            <span className="mood-nums">{f.hot.join(" · ")}</span>
             <span className="mood-sub">over all history</span>
           </div>
           <div className="mood cold">
             <span className="mood-lab">Shows up least</span>
-            <span className="mood-nums">{f.cold.join("  ")}</span>
+            <span className="mood-nums">{f.cold.join(" · ")}</span>
             <span className="mood-sub">over all history</span>
           </div>
           <div className="mood due">
             <span className="mood-lab">Longest unseen</span>
-            <span className="mood-nums">{f.overdue.join("  ")}</span>
+            <span className="mood-nums">{f.overdue.join(" · ")}</span>
             <span className="mood-sub">gap since last draw</span>
           </div>
         </div>
@@ -917,7 +950,7 @@ export default function App() {
 
       {/* STEP 2 — the pick */}
       <section className="card pickcard">
-        <div className="step">2 &middot; Your number</div>
+        <div className="step big-step"><span className="rn">II</span> Your number</div>
         <div className={"bignum" + (pick && pick.spinning ? " spin" : "")}>
           {pick ? pick.num : "— — —"}
         </div>
@@ -962,7 +995,7 @@ export default function App() {
 
       {/* Play your own / check a number */}
       <section className="card">
-        <div className="step">Play your own number</div>
+        <div className="step big-step"><span className="rn">III</span> Play your own number</div>
         <p className="own-sub">Type any 3 digits to see what kind of box it is, your best odds, and whether it would have won the latest {scope === "combined" ? "" : scope} draw.</p>
         <div className="own-row">
           <input className="ownin" placeholder="4 8 0" maxLength={3} value={myNum}
@@ -973,7 +1006,7 @@ export default function App() {
 
         {isStale && latestDraw && (
           <div className="stale-warn">
-            ⚠ Your newest {scope === "combined" ? "" : scope} draw on file is <b>{latestDraw.str}</b> from <b>{latestDraw.date}</b>, not today. The check below uses that draw. Add today&rsquo;s result in the next step for an accurate check.
+            ⚠ Your newest {scope === "combined" ? "" : scope} draw on file is <b>{latestDraw.str}</b> from <b>{fmtDate(latestDraw.date)}</b>, not today. The check below uses that draw. Add today&rsquo;s result in the next step for an accurate check.
           </div>
         )}
 
@@ -996,10 +1029,10 @@ export default function App() {
         {checkResult && (
           <div className={"check-banner " + (checkResult.straight ? "win-big" : checkResult.box ? "win-box" : "no-win")}>
             {checkResult.straight
-              ? `🎉 STRAIGHT WIN! ${myNum} exactly matches the latest draw (${checkResult.latest.str}, ${checkResult.latest.date}).`
+              ? `🎉 STRAIGHT WIN! ${myNum} exactly matches the latest draw (${checkResult.latest.str}, ${fmtDate(checkResult.latest.date)}).`
               : checkResult.box
-              ? `✓ BOX WIN — same digits, different order. Latest draw was ${checkResult.latest.str} (${checkResult.latest.date}). A box play would have won; a straight would not.`
-              : `No win against the latest draw (${checkResult.latest.str}, ${checkResult.latest.date}). That's the usual outcome — it's a 1-in-1,000 game.`}
+              ? `✓ BOX WIN — same digits, different order. Latest draw was ${checkResult.latest.str} (${fmtDate(checkResult.latest.date)}). A box play would have won; a straight would not.`
+              : `No win against the latest draw (${checkResult.latest.str}, ${fmtDate(checkResult.latest.date)}). That's the usual outcome — it's a 1-in-1,000 game.`}
           </div>
         )}
 
@@ -1008,7 +1041,7 @@ export default function App() {
 
       {/* STEP 3 — keep it fresh */}
       <section className="card">
-        <div className="step">3 &middot; Add the latest draw {isStale ? "" : "✓ up to date"}</div>
+        <div className="step big-step"><span className="rn">IV</span> Add the latest draw {isStale ? "" : "✓"}</div>
         <p className="own-sub">Enter tonight&rsquo;s winning number so the checker above stays accurate. One tap uses today&rsquo;s date for you.</p>
         <div className="fresh-row">
           <select value={newTime} onChange={(e) => setNewTime(e.target.value)}>
@@ -1024,13 +1057,69 @@ export default function App() {
             <button className="add" onClick={() => addDraw(false)} disabled={newNum.length !== 3 || !newDate}>Add for this date</button>
           </div>
         </details>
-        <button className="datalink" onClick={() => setShowData((v) => !v)}>{showData ? "Hide" : "View"} all {all.length} draws</button>
+        <div className="recent-edit">
+          <div className="re-h">Recent entries — tap ✕ to remove a wrong one</div>
+          {rawLines.map((ln) => {
+            const [d, t, num] = ln.split(",");
+            if (!num) return null;
+            return (
+              <div className="re-row" key={ln}>
+                <span className="re-date">{fmtDate(d)}</span>
+                <span className={"re-tag " + (t === "m" ? "midday" : "evening")}>{t === "m" ? "MIDDAY" : "EVENING"}</span>
+                <span className="re-num">{num}</span>
+                <button className="re-del" onClick={() => deleteDrawLine(ln)} aria-label="remove">✕</button>
+              </div>
+            );
+          })}
+          <p className="re-note">Wrong number? Remove it here, then add the correct one above.</p>
+        </div>
+
+        <button className="datalink" onClick={() => setShowData((v) => !v)}>{showData ? "Hide" : "View / edit"} all {all.length} draws</button>
         {showData && (
           <>
             <p className="hint">One per line: <code>YYYY-MM-DD,e,169</code> (e = evening, m = midday). To save new draws permanently, copy this into your project file.</p>
             <textarea value={seedText} onChange={(e) => setSeedText(e.target.value)} spellCheck={false} />
           </>
         )}
+      </section>
+
+      {/* STEP V — bet tracker */}
+      <section className="card">
+        <div className="step big-step"><span className="rn">V</span> Track your play</div>
+        <p className="own-sub">Log what you actually bet and won. It keeps an honest running tally so you can see the real bottom line over time.</p>
+
+        <div className="bet-inputs">
+          <div className="bet-field"><label>Number</label>
+            <input className="bnum" placeholder="169" maxLength={3} value={betNum} onChange={(e) => setBetNum(e.target.value.replace(/\D/g, ""))} /></div>
+          <div className="bet-field"><label>Bet $</label>
+            <input className="bamt" type="number" min="0" step="0.5" value={betAmt} onChange={(e) => setBetAmt(e.target.value)} /></div>
+          <div className="bet-field"><label>Won $</label>
+            <input className="bamt" type="number" min="0" step="1" placeholder="0" value={betWon} onChange={(e) => setBetWon(e.target.value)} /></div>
+          <button className="add bet-add" onClick={logBet} disabled={betNum.length !== 3}>Log it</button>
+        </div>
+
+        {bets.length > 0 && (
+          <>
+            <div className="ledger">
+              {bets.map((b) => (
+                <div className="led-row" key={b.id}>
+                  <span className="led-date">{fmtDate(b.date)}</span>
+                  <span className="led-num">{b.num}</span>
+                  <span className="led-bet">-${b.amt.toFixed(2)}</span>
+                  <span className={"led-won " + (b.won > 0 ? "pos" : "")}>{b.won > 0 ? `+$${b.won.toFixed(2)}` : "—"}</span>
+                  <button className="re-del" onClick={() => delBet(b.id)} aria-label="remove">✕</button>
+                </div>
+              ))}
+            </div>
+            <div className="tally">
+              <div className="tal"><span className="tal-l">Total bet</span><span className="tal-v neg">-${totals.spent.toFixed(2)}</span></div>
+              <div className="tal"><span className="tal-l">Total won</span><span className="tal-v pos">+${totals.won.toFixed(2)}</span></div>
+              <div className="tal big"><span className="tal-l">Bottom line</span><span className={"tal-v " + (net >= 0 ? "pos" : "neg")}>{net >= 0 ? "+" : "-"}${Math.abs(net).toFixed(2)}</span></div>
+            </div>
+            <p className="tally-note">Over time this number tends to drift negative — that&rsquo;s the house edge, not bad luck. Seeing it plainly is the honest point of the tracker.</p>
+          </>
+        )}
+        <p className="re-note">Note: this log lives in your browser for this session. To keep a permanent record, jot the bottom line somewhere before closing.</p>
       </section>
 
       <footer className="foot">
@@ -1051,6 +1140,8 @@ const CSS = `
   .tag { color:var(--mut); margin-top:8px; font-size:15px; }
   .card { background:var(--card); border:1px solid var(--line); border-radius:16px; padding:clamp(18px,4vw,26px); margin-bottom:16px; }
   .step { font-family:'IBM Plex Mono',monospace; font-size:12px; letter-spacing:.12em; text-transform:uppercase; color:var(--signal); margin-bottom:16px; }
+  .big-step { display:flex; align-items:center; gap:12px; font-size:18px; letter-spacing:.04em; text-transform:none; }
+  .rn { display:inline-flex; align-items:center; justify-content:center; min-width:44px; height:44px; padding:0 10px; border:2px solid var(--signal); border-radius:12px; font-size:24px; font-weight:600; color:var(--signal); letter-spacing:0; }
   .scope { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:20px; }
   .sc { flex:1; min-width:90px; background:transparent; border:1px solid var(--line); color:var(--mut); border-radius:10px; padding:11px 8px; font-size:14px; cursor:pointer; font-family:inherit; transition:.15s; }
   .sc:hover { border-color:var(--signal); color:var(--fg); }
@@ -1060,7 +1151,7 @@ const CSS = `
   .mood { background:#0d141c; border:1px solid var(--line); border-radius:12px; padding:14px; text-align:center; display:flex; flex-direction:column; gap:5px; }
   .mood.hot { border-top:3px solid var(--hot); } .mood.cold { border-top:3px solid var(--cold); } .mood.due { border-top:3px solid var(--due); }
   .mood-lab { font-size:12px; color:var(--mut); text-transform:uppercase; letter-spacing:.08em; }
-  .mood-nums { font-family:'IBM Plex Mono',monospace; font-size:26px; font-weight:600; letter-spacing:.1em; }
+  .mood-nums { font-family:'IBM Plex Mono',monospace; font-size:26px; font-weight:600; letter-spacing:.04em; white-space:nowrap; }
   .mood.hot .mood-nums { color:var(--hot); } .mood.cold .mood-nums { color:var(--cold); } .mood.due .mood-nums { color:var(--due); }
   .mood-sub { font-size:11px; color:var(--mut); }
   .chartwrap { margin-bottom:16px; }
@@ -1120,6 +1211,44 @@ const CSS = `
   .other-date summary { cursor:pointer; font-size:14px; color:var(--mut); font-family:'IBM Plex Mono',monospace; padding:6px 0; }
   .other-date .adder-row { margin-top:10px; }
 
+
+  /* editable recent list (#4) */
+  .recent-edit { margin:6px 0 14px; }
+  .re-h { font-size:13px; color:var(--mut); margin-bottom:10px; }
+  .re-row { display:grid; grid-template-columns:auto auto 1fr auto; align-items:center; gap:10px; padding:10px 12px; background:#0d141c; border:1px solid var(--line); border-radius:8px; margin-bottom:6px; }
+  .re-date { font-family:'IBM Plex Mono',monospace; font-size:13px; color:var(--mut); }
+  .re-tag { font-family:'IBM Plex Mono',monospace; font-size:11px; font-weight:600; letter-spacing:.08em; padding:4px 9px; border-radius:6px; text-align:center; }
+  .re-tag.midday { background:rgba(232,161,58,.16); color:var(--cold); border:1px solid rgba(232,161,58,.4); }
+  .re-tag.evening { background:rgba(55,217,196,.14); color:var(--hot); border:1px solid rgba(55,217,196,.4); }
+  .re-num { font-family:'IBM Plex Mono',monospace; font-size:18px; letter-spacing:.1em; text-align:right; }
+  .re-del { background:transparent; border:1px solid var(--line); color:var(--cold); border-radius:8px; width:36px; height:36px; font-size:16px; cursor:pointer; }
+  .re-del:hover { border-color:var(--cold); background:rgba(232,161,58,.1); }
+  .re-note { font-size:12.5px; color:var(--mut); margin-top:8px; line-height:1.5; }
+
+  /* bet tracker (#2) */
+  .bet-inputs { display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; margin-bottom:16px; }
+  .bet-field { display:flex; flex-direction:column; gap:5px; }
+  .bet-field label { font-size:12px; color:var(--mut); text-transform:uppercase; letter-spacing:.06em; }
+  .bnum { width:100px; background:#0d141c; border:1px solid var(--line); color:var(--fg); border-radius:10px; padding:13px; font-family:'IBM Plex Mono',monospace; font-size:20px; text-align:center; letter-spacing:.15em; }
+  .bamt { width:92px; background:#0d141c; border:1px solid var(--line); color:var(--fg); border-radius:10px; padding:13px; font-family:'IBM Plex Mono',monospace; font-size:18px; text-align:center; }
+  .bet-add { min-height:52px; }
+  .ledger { display:flex; flex-direction:column; gap:6px; margin-bottom:14px; }
+  .led-row { display:grid; grid-template-columns:auto auto 1fr 1fr auto; align-items:center; gap:10px; padding:10px 12px; background:#0d141c; border:1px solid var(--line); border-radius:8px; }
+  .led-date { font-family:'IBM Plex Mono',monospace; font-size:12.5px; color:var(--mut); }
+  .led-num { font-family:'IBM Plex Mono',monospace; font-size:16px; letter-spacing:.08em; }
+  .led-bet { font-family:'IBM Plex Mono',monospace; font-size:14px; color:var(--cold); text-align:right; }
+  .led-won { font-family:'IBM Plex Mono',monospace; font-size:14px; color:var(--mut); text-align:right; }
+  .led-won.pos { color:var(--hot); }
+  .tally { display:flex; flex-direction:column; gap:8px; background:#0d141c; border:1px solid var(--line); border-radius:12px; padding:16px 18px; margin-bottom:12px; }
+  .tal { display:flex; justify-content:space-between; align-items:center; }
+  .tal-l { font-size:15px; color:var(--mut); }
+  .tal-v { font-family:'IBM Plex Mono',monospace; font-size:17px; font-weight:600; }
+  .tal-v.pos { color:var(--hot); } .tal-v.neg { color:var(--cold); }
+  .tal.big { border-top:1px solid var(--line); padding-top:12px; margin-top:4px; }
+  .tal.big .tal-l { font-size:17px; color:var(--fg); font-weight:600; }
+  .tal.big .tal-v { font-size:24px; }
+  .tally-note { font-size:13px; color:var(--mut); line-height:1.55; margin-bottom:8px; }
+
   .own-sub { font-size:15px; color:var(--mut); line-height:1.55; margin-bottom:16px; }
   .own-row { display:flex; gap:10px; margin-bottom:16px; flex-wrap:wrap; }
   .ownin { flex:1; min-width:120px; background:#0d141c; border:1px solid var(--line); color:var(--fg); border-radius:10px; padding:16px; font-family:'IBM Plex Mono',monospace; font-size:28px; text-align:center; letter-spacing:.3em; }
@@ -1143,6 +1272,8 @@ const CSS = `
   .lab { font-size:17px; }
   .tag { font-size:17px; }
   .step { font-size:13px; }
+  .big-step { font-size:20px; }
+  .rn { min-width:48px; height:48px; font-size:26px; }
   .sc { font-size:16px; padding:14px 10px; min-height:52px; }
   .mood-lab { font-size:13px; }
   .mood-nums { font-size:30px; }
@@ -1175,7 +1306,9 @@ const CSS = `
     .scope { flex-direction:column; }
     .sc { width:100%; min-width:0; }
     .moodgrid { grid-template-columns:1fr; }
-    .mood { flex-direction:row; justify-content:space-between; align-items:center; text-align:left; padding:16px; }
+    .mood { flex-direction:row; justify-content:space-between; align-items:center; text-align:left; padding:16px; gap:12px; }
+    .mood > span:first-child { flex:0 0 auto; }
+    .mood-nums { flex:1 1 auto; text-align:right; font-size:26px; letter-spacing:.02em; }
     .mood-nums { font-size:28px; }
     .mood > span:first-child { order:0; } 
     .bignum { font-size:clamp(72px,26vw,120px); }
@@ -1183,6 +1316,12 @@ const CSS = `
     .box-row .bp { grid-column:1 / -1; }
     .adder-row { flex-direction:column; align-items:stretch; }
     .fresh-row { flex-direction:column; }
+    .bet-inputs { flex-direction:column; align-items:stretch; }
+    .bet-field { width:100%; } .bnum, .bamt { width:100%; }
+    .bet-add { width:100%; }
+    .re-row { grid-template-columns:auto auto 1fr auto; }
+    .led-row { grid-template-columns:1fr auto auto auto; }
+    .led-date { grid-column:1 / -1; }
     .fresh-row select, .big-add, .fresh-row .numin { width:100%; }
     .adder-row input, .adder-row select, .numin, .add { width:100%; }
   }
